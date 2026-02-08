@@ -23,7 +23,7 @@
   <nav class="glass-nav">
     <div class="logo">
       <div class="logo-box"></div>
-      <span>Metadata Takeout</span>
+      <span>Metadata Takeout Fixer</span>
     </div>
     <div class="nav-links">
       <a href="#features">Features</a>
