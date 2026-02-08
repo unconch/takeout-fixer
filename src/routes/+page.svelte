@@ -1,13 +1,22 @@
-<script lang="ts">
   import Hero3D from "$lib/components/Hero3D.svelte";
   import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
 
   let visible = $state(false);
+  let isTauri = $state(false);
+
   onMount(() => {
-    setTimeout(() => (visible = true), 100);
+    // Detect if we are inside Tauri
+    if (window && (window as any).__TAURI_INTERNALS__) {
+      isTauri = true;
+      goto("/fix");
+    } else {
+      setTimeout(() => (visible = true), 100);
+    }
   });
 </script>
 
+{#if !isTauri}
 <div class="landing-page" class:visible>
   <Hero3D />
 
@@ -397,3 +406,4 @@
     }
   }
 </style>
+{/if}
