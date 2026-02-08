@@ -57,12 +57,15 @@ pub struct RepairReport {
 
 pub fn is_media_file(path: &Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-    matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "heic" | "mp4" | "mov")
+    matches!(ext.as_str(), 
+        "jpg" | "jpeg" | "png" | "heic" | "webp" | "gif" | "tiff" | "bmp" |
+        "mp4" | "mov" | "m4v" | "mkv" | "avi" | "wmv"
+    )
 }
 
 pub fn is_video_file(path: &Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-    matches!(ext.as_str(), "mp4" | "mov")
+    matches!(ext.as_str(), "mp4" | "mov" | "m4v" | "mkv" | "avi" | "wmv")
 }
 
 pub fn find_metadata_json(media_path: &Path) -> Option<PathBuf> {

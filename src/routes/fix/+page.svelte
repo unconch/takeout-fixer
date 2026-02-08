@@ -3,6 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
+  import { fade, fly } from "svelte/transition";
 
   interface ScanResult {
     media_file: string;
@@ -33,19 +34,80 @@
   let repairDone = $state(false);
   let copySolos = $state(true);
   let errorMsg = $state("");
+  let isDragging = $state(false);
 
   // Progress tracking
   let progress = $state<ProgressEvent | null>(null);
   let startTime = $state(0);
   let remainingTime = $state("");
   let finalReport = $state<RepairReport | null>(null);
+  let displayedReport = $state<RepairReport>({
+    fixed_photos: 0,
+    fixed_videos: 0,
+    gps_restored: 0,
+    solo_copied: 0,
+    failed: 0,
+  });
+
+  function animateCounters() {
+    if (!finalReport) return;
+    const duration = 1500;
+    const start = Date.now();
+    const target = { ...finalReport };
+
+    const step = () => {
+      const now = Date.now();
+      const progress = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+
+      displayedReport.fixed_photos = Math.floor(target.fixed_photos * ease);
+      displayedReport.fixed_videos = Math.floor(target.fixed_videos * ease);
+      displayedReport.gps_restored = Math.floor(target.gps_restored * ease);
+      displayedReport.solo_copied = Math.floor(target.solo_copied * ease);
+      displayedReport.failed = Math.floor(target.failed * ease);
+
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
 
   onMount(() => {
-    const unlisten = listen<ProgressEvent>("repair-progress", (event) => {
-      progress = event.payload;
-      updateEstimate(event.payload);
+    // Progress listener
+    const unlistenProgress = listen<ProgressEvent>(
+      "repair-progress",
+      (event) => {
+        progress = event.payload;
+        updateEstimate(event.payload);
+      },
+    );
+
+    // Native Drag and Drop
+    const unlistenDrop = listen<{ paths: string[] }>(
+      "tauri://drag-drop",
+      (event) => {
+        isDragging = false;
+        const paths = event.payload.paths;
+        if (paths && paths.length > 0) {
+          sourcePath = paths[0];
+          runAnalysis();
+        }
+      },
+    );
+
+    const unlistenDragEnter = listen("tauri://drag-enter", () => {
+      isDragging = true;
     });
-    return () => unlisten.then((f) => f());
+
+    const unlistenDragLeave = listen("tauri://drag-leave", () => {
+      isDragging = false;
+    });
+
+    return () => {
+      unlistenProgress.then((f) => f());
+      unlistenDrop.then((f) => f());
+      unlistenDragEnter.then((f) => f());
+      unlistenDragLeave.then((f) => f());
+    };
   });
 
   function updateEstimate(p: ProgressEvent) {
@@ -114,6 +176,7 @@
         copySolos,
       });
       repairDone = true;
+      animateCounters();
     } catch (e: any) {
       errorMsg = e.toString();
     } finally {
@@ -133,8 +196,18 @@
   <div class="blob blob-1"></div>
   <div class="blob blob-2"></div>
 
+  {#if isDragging}
+    <div class="drag-overlay" transition:fade={{ duration: 200 }}>
+      <div class="overlay-content">
+        <div class="icon-drop">📂</div>
+        <h2>Drop Takeout Folder</h2>
+        <p>Release to start analyzing library</p>
+      </div>
+    </div>
+  {/if}
+
   <main class="content">
-    <header class="hero">
+    <header class="hero" in:fly={{ y: -20, duration: 600 }}>
       <div class="badge">Version 1.0 (PRO)</div>
       <h1>Truth for your <span>Memories</span></h1>
       <p>
@@ -142,7 +215,7 @@
       </p>
     </header>
 
-    <div class="grid-container">
+    <div class="grid-container" in:fly={{ y: 20, duration: 600, delay: 200 }}>
       <section class="config-panel">
         <div class="glass-card">
           <div class="section-header">
@@ -168,16 +241,22 @@
           <div class="input-stack">
             <div class="input-group">
               <div class="label-row">
-                <label>Takeout Folder</label>
+                <label for="source-input">Takeout Folder</label>
                 {#if sourcePath}<span class="check">✓</span>{/if}
               </div>
               <div class="field-btn">
                 <input
+                  id="source-input"
                   readonly
                   placeholder="Pick your Source folder..."
                   value={sourcePath}
                 />
-                <button onclick={selectSource} class="btn-icon">
+                <button
+                  onclick={selectSource}
+                  class="btn-icon"
+                  aria-label="Select Source Folder"
+                  title="Select Folder"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="18"
@@ -198,16 +277,22 @@
 
             <div class="input-group">
               <div class="label-row">
-                <label>Destination Folder</label>
+                <label for="dest-input">Destination Folder</label>
                 {#if destPath}<span class="check">✓</span>{/if}
               </div>
               <div class="field-btn">
                 <input
+                  id="dest-input"
                   readonly
                   placeholder="Pick your Fixed folder..."
                   value={destPath}
                 />
-                <button onclick={selectDest} class="btn-icon">
+                <button
+                  onclick={selectDest}
+                  class="btn-icon"
+                  aria-label="Select Destination Folder"
+                  title="Select Folder"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="18"
@@ -250,7 +335,10 @@
         </div>
       </section>
 
-      <section class="display-panel">
+      <section
+        class="display-panel"
+        in:fly={{ x: 20, duration: 600, delay: 400 }}
+      >
         {#if repairing}
           <div class="glass-card active-repair">
             <div class="progress-section">
@@ -284,23 +372,23 @@
             <div class="report-grid">
               <div class="report-item">
                 <span class="l">Photos Fixed</span>
-                <span class="v">{finalReport.fixed_photos}</span>
+                <span class="v">{displayedReport.fixed_photos}</span>
               </div>
               <div class="report-item">
                 <span class="l">Videos Fixed</span>
-                <span class="v">{finalReport.fixed_videos}</span>
+                <span class="v">{displayedReport.fixed_videos}</span>
               </div>
               <div class="report-item">
                 <span class="l">GPS Restored</span>
-                <span class="v">{finalReport.gps_restored}</span>
+                <span class="v">{displayedReport.gps_restored}</span>
               </div>
               <div class="report-item">
                 <span class="l">Solo Files Copied</span>
-                <span class="v">{finalReport.solo_copied}</span>
+                <span class="v">{displayedReport.solo_copied}</span>
               </div>
               <div class="report-item fail">
                 <span class="l">Errors</span>
-                <span class="v">{finalReport.failed}</span>
+                <span class="v">{displayedReport.failed}</span>
               </div>
             </div>
 
@@ -506,6 +594,40 @@
     }
   }
 
+  .drag-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(59, 130, 246, 0.15);
+    backdrop-filter: blur(10px);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    border: 4px dashed var(--accent-blue);
+    margin: 20px;
+    border-radius: 3rem;
+    box-sizing: border-box;
+  }
+
+  .overlay-content {
+    text-align: center;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 3rem 5rem;
+    border-radius: 2rem;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  }
+
+  .icon-drop {
+    font-size: 5rem;
+    margin-bottom: 1rem;
+    display: block;
+  }
+
   .content {
     position: relative;
     z-index: 1;
@@ -570,6 +692,12 @@
     border-radius: 2rem;
     padding: 2.25rem;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .glass-card:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .section-header {
@@ -738,8 +866,22 @@
   .scroll-area {
     flex: 1;
     overflow-y: auto;
-    padding-right: 0.5rem;
+    padding-right: 0.8rem;
     margin-top: 1rem;
+  }
+
+  .scroll-area::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-area::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .scroll-area::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-blue);
   }
   .file-item {
     display: flex;
